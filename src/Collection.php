@@ -1,9 +1,9 @@
 <?php
 
-namespace Kalnoy\Nestedset;
+namespace Ece2\HyperfExtNestedset;
 
-use Illuminate\Database\Eloquent\Collection as BaseCollection;
-use Illuminate\Database\Eloquent\Model;
+use Hyperf\Database\Model\Collection as BaseCollection;
+use Hyperf\Database\Model\Model;
 
 class Collection extends BaseCollection
 {

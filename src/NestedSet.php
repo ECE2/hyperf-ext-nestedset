@@ -1,8 +1,8 @@
 <?php
 
-namespace Kalnoy\Nestedset;
+namespace Ece2\HyperfExtNestedset;
 
-use Illuminate\Database\Schema\Blueprint;
+use Hyperf\Database\Schema\Blueprint;
 
 class NestedSet
 {

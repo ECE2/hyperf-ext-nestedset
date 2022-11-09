@@ -1,13 +1,15 @@
 <?php
 
-namespace Kalnoy\Nestedset;
+declare(strict_types=1);
+
+namespace Ece2\HyperfExtNestedset;
 
 use Exception;
-use Illuminate\Database\Eloquent\Collection as EloquentCollection;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Arr;
+use Hyperf\Database\Model\Collection as ModelCollection;
+use Hyperf\Database\Model\Model;
+use Hyperf\Database\Model\Relations\BelongsTo;
+use Hyperf\Database\Model\Relations\HasMany;
+use Hyperf\Utils\Arr;
 use LogicException;
 
 trait NodeTrait
@@ -43,25 +45,25 @@ trait NodeTrait
      */
     public static function bootNodeTrait()
     {
-        static::saving(function ($model) {
+        method_exists(static::class, 'saving') && static::saving(function ($model) {
             return $model->callPendingAction();
         });
 
-        static::deleting(function ($model) {
+        method_exists(static::class, 'deleting') && static::deleting(function ($model) {
             // We will need fresh data to delete node safely
             $model->refreshNode();
         });
 
-        static::deleted(function ($model) {
+        method_exists(static::class, 'deleted') && static::deleted(function ($model) {
             $model->deleteDescendants();
         });
 
         if (static::usesSoftDelete()) {
-            static::restoring(function ($model) {
+            method_exists(static::class, 'restoring') && static::restoring(function ($model) {
                 static::$deletedAt = $model->{$model->getDeletedAtColumn()};
             });
 
-            static::restored(function ($model) {
+            method_exists(static::class, 'restored') && static::restored(function ($model) {
                 $model->restoreDescendants(static::$deletedAt);
             });
         }
@@ -267,7 +269,7 @@ trait NodeTrait
     /**
      * Get the node siblings and the node itself.
      *
-     * @return \Kalnoy\Nestedset\QueryBuilder
+     * @return \Ece2\HyperfExtNestedset\QueryBuilder
      */
     public function siblingsAndSelf()
     {
@@ -280,7 +282,7 @@ trait NodeTrait
      *
      * @param  array $columns
      *
-     * @return \Illuminate\Database\Eloquent\Collection
+     * @return \Hyperf\Database\Model\Collection
      */
     public function getSiblingsAndSelf(array $columns = [ '*' ])
     {
@@ -659,9 +661,9 @@ trait NodeTrait
      *
      * @since 2.0
      */
-    public function newEloquentBuilder($query)
+    public function newModelQuery()
     {
-        return new QueryBuilder($query);
+        return (new QueryBuilder($this->newBaseQueryBuilder()))->setModel($this);
     }
 
     /**
@@ -764,7 +766,7 @@ trait NodeTrait
         $instance->save();
 
         // Now create children
-        $relation = new EloquentCollection;
+        $relation = new ModelCollection;
 
         foreach ((array)$children as $child) {
             $relation->add($child = static::create($child, $instance));
@@ -1082,7 +1084,7 @@ trait NodeTrait
     /**
      * @return array
      */
-    protected function getArrayableRelations()
+    protected function getArrayableRelations(): array
     {
         $result = parent::getArrayableRelations();
 
@@ -1204,7 +1206,7 @@ trait NodeTrait
     /**
      * @param array|null $except
      *
-     * @return \Illuminate\Database\Eloquent\Model
+     * @return \Hyperf\Database\Model\Model
      */
     public function replicate(array $except = null)
     {

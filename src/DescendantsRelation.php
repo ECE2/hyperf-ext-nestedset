@@ -1,9 +1,9 @@
 <?php
 
-namespace Kalnoy\Nestedset;
+namespace Ece2\HyperfExtNestedset;
 
-use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
-use Illuminate\Database\Eloquent\Model;
+use Hyperf\Database\Model\Model;
+use Hyperf\Database\Model\Relations\Constraint;
 
 class DescendantsRelation extends BaseRelation
 {
@@ -15,10 +15,11 @@ class DescendantsRelation extends BaseRelation
      */
     public function addConstraints()
     {
-        if ( ! static::$constraints) return;
-
-        $this->query->whereDescendantOf($this->parent)
-        ->applyNestedSetScope();
+        if (Constraint::isConstraint()) {
+            $this->query
+                ->whereDescendantOf($this->parent)
+                ->applyNestedSetScope();
+        }
     }
 
     /**

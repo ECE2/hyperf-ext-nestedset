@@ -1,12 +1,12 @@
 <?php
 
-namespace Kalnoy\Nestedset;
+namespace Ece2\HyperfExtNestedset;
 
-use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
-use Illuminate\Database\Eloquent\Collection as EloquentCollection;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\Relation;
-use Illuminate\Database\Query\Builder;
+use Hyperf\Database\Model\Builder as ModelBuilder;
+use Hyperf\Database\Model\Collection as ModelCollection;
+use Hyperf\Database\Model\Model;
+use Hyperf\Database\Model\Relations\Relation;
+use Hyperf\Database\Query\Builder;
 use InvalidArgumentException;
 
 abstract class BaseRelation extends Relation
@@ -70,14 +70,14 @@ abstract class BaseRelation extends Relation
     abstract protected function relationExistenceCondition($hash, $table, $lft, $rgt);
 
     /**
-     * @param EloquentBuilder $query
-     * @param EloquentBuilder $parent
+     * @param ModelBuilder $query
+     * @param ModelBuilder $parent
      * @param array $columns
      *
      * @return mixed
      */
-    public function getRelationExistenceQuery(EloquentBuilder $query, EloquentBuilder $parent,
-                                              $columns = [ '*' ]
+    public function getRelationExistenceQuery(ModelBuilder $query, ModelBuilder $parent,
+                                                           $columns = [ '*' ]
     ) {
         $query = $this->getParent()->replicate()->newScopedQuery()->select($columns);
 
@@ -109,20 +109,6 @@ abstract class BaseRelation extends Relation
     public function initRelation(array $models, $relation)
     {
         return $models;
-    }
-
-    /**
-     * @param EloquentBuilder $query
-     * @param EloquentBuilder $parent
-     * @param array $columns
-     *
-     * @return mixed
-     */
-    public function getRelationQuery(
-        EloquentBuilder $query, EloquentBuilder $parent,
-        $columns = [ '*' ]
-    ) {
-        return $this->getRelationExistenceQuery($query, $parent, $columns);
     }
 
     /**
@@ -175,12 +161,12 @@ abstract class BaseRelation extends Relation
      * Match the eagerly loaded results to their parents.
      *
      * @param  array $models
-     * @param  EloquentCollection $results
+     * @param  ModelCollection $results
      * @param  string $relation
      *
      * @return array
      */
-    public function match(array $models, EloquentCollection $results, $relation)
+    public function match(array $models, ModelCollection $results, $relation)
     {
         foreach ($models as $model) {
             $related = $this->matchForModel($model, $results);
@@ -193,11 +179,11 @@ abstract class BaseRelation extends Relation
 
     /**
      * @param Model $model
-     * @param EloquentCollection $results
+     * @param ModelCollection $results
      *
      * @return Collection
      */
-    protected function matchForModel(Model $model, EloquentCollection $results)
+    protected function matchForModel(Model $model, ModelCollection $results)
     {
         $result = $this->related->newCollection();
 

@@ -1,59 +1,84 @@
 <?php
 
-use Illuminate\Database\Capsule\Manager as Capsule;
-use Kalnoy\Nestedset\NestedSet;
+namespace HyperfTest\HyperfExtNestedset;
 
-class NodeTest extends PHPUnit\Framework\TestCase
+use Ece2\HyperfExtNestedset\Collection;
+use Ece2\HyperfExtNestedset\NestedSet;
+use Hyperf\Database\ConnectionInterface;
+use Hyperf\Database\ConnectionResolver;
+use Hyperf\Database\ConnectionResolverInterface;
+use Hyperf\Database\Connectors\ConnectionFactory;
+use Hyperf\Database\Connectors\MySqlConnector;
+use Hyperf\Database\Migrations\DatabaseMigrationRepository;
+use Hyperf\Database\Migrations\Migrator;
+use Hyperf\Database\Query\Builder;
+use Hyperf\Database\Query\Grammars\Grammar;
+use Hyperf\Database\Query\Grammars\MySqlGrammar;
+use Hyperf\Database\Query\Processors\Processor;
+use Hyperf\Database\Schema\Schema;
+use Hyperf\DbConnection\Db;
+use Hyperf\Utils\ApplicationContext;
+use Hyperf\Utils\Filesystem\Filesystem;
+use HyperfTest\HyperfExtNestedset\Model\Category;
+use HyperfTest\HyperfExtNestedset\Stub\ContainerStub;
+use PHPUnit\Framework\TestCase;
+use Psr\Container\ContainerInterface;
+use Psr\EventDispatcher\EventDispatcherInterface;
+
+class NodeTest extends TestCase
 {
-    public static function setUpBeforeClass()
+    protected $migrator;
+
+    public static function setUpBeforeClass(): void
     {
-        $schema = Capsule::schema();
+        $container = ContainerStub::getContainer();
 
-        $schema->dropIfExists('categories');
+        Schema::dropIfExists('categories');
 
-        Capsule::disableQueryLog();
-
-        $schema->create('categories', function (\Illuminate\Database\Schema\Blueprint $table) {
+        Schema::create('categories', function (\Hyperf\Database\Schema\Blueprint $table) {
             $table->increments('id');
             $table->string('name');
             $table->softDeletes();
             NestedSet::columns($table);
         });
-
-        Capsule::enableQueryLog();
     }
 
-    public function setUp()
+    protected function setUp(): void
     {
-        $data = include __DIR__.'/data/categories.php';
+        $container = ContainerStub::getContainer();
 
-        Capsule::table('categories')->insert($data);
+        $data = include __DIR__ . '/data/categories.php';
 
-        Capsule::flushQueryLog();
+        Db::table('categories')->insert($data);
 
         Category::resetActionsPerformed();
-
-        date_default_timezone_set('America/Denver');
     }
 
-    public function tearDown()
+    protected function tearDown(): void
     {
-        Capsule::table('categories')->truncate();
+        Db::table('categories')->truncate();
     }
 
-    // public static function tearDownAfterClass()
-    // {
-    //     $log = Capsule::getQueryLog();
-    //     foreach ($log as $item) {
-    //         echo $item['query']." with ".implode(', ', $item['bindings'])."\n";
-    //     }
-    // }
+    protected function getContainer()
+    {
+        $dispatcher = \Mockery::mock(EventDispatcherInterface::class);
+        $dispatcher->shouldReceive('dispatch')->with(\Mockery::any())->andReturnUsing(function ($event) {
+//            $this->channel->push($event);
+        });
+        $container = ContainerStub::getContainer(function ($conn) use ($dispatcher) {
+            $conn->setEventDispatcher($dispatcher);
+        });
+        $container->shouldReceive('get')->with(EventDispatcherInterface::class)->andReturn($dispatcher);
+
+        return $container;
+    }
 
     public function assertTreeNotBroken($table = 'categories')
     {
         $checks = array();
 
-        $connection = Capsule::connection();
+        $container = self::getContainer();
+        $connection = $container->get(ConnectionResolverInterface::class)->connection();
 
         $table = $connection->getQueryGrammar()->wrapTable($table);
 
@@ -61,33 +86,33 @@ class NodeTest extends PHPUnit\Framework\TestCase
         $checks[] = "from $table where _lft >= _rgt or (_rgt - _lft) % 2 = 0";
 
         // Check if lft and rgt values are unique
-        $checks[] = "from $table c1, $table c2 where c1.id <> c2.id and ".
+        $checks[] = "from $table c1, $table c2 where c1.id <> c2.id and " .
             "(c1._lft=c2._lft or c1._rgt=c2._rgt or c1._lft=c2._rgt or c1._rgt=c2._lft)";
 
         // Check if parent_id is set correctly
-        $checks[] = "from $table c, $table p, $table m where c.parent_id=p.id and m.id <> p.id and m.id <> c.id and ".
-             "(c._lft not between p._lft and p._rgt or c._lft between m._lft and m._rgt and m._lft between p._lft and p._rgt)";
+        $checks[] = "from $table c, $table p, $table m where c.parent_id=p.id and m.id <> p.id and m.id <> c.id and " .
+            "(c._lft not between p._lft and p._rgt or c._lft between m._lft and m._rgt and m._lft between p._lft and p._rgt)";
 
         foreach ($checks as $i => $check) {
-            $checks[$i] = 'select 1 as error '.$check;
+            $checks[$i] = 'select 1 as error ' . $check;
         }
 
-        $sql = 'select max(error) as errors from ('.implode(' union ', $checks).') _';
+        $sql = 'select max(error) as errors from (' . implode(' union ', $checks) . ') _';
 
         $actual = $connection->selectOne($sql);
 
         $this->assertEquals(null, $actual->errors, "The tree structure of $table is broken!");
-        $actual = (array)Capsule::connection()->selectOne($sql);
+        $actual = (array) $connection->selectOne($sql);
 
         $this->assertEquals(array('errors' => null), $actual, "The tree structure of $table is broken!");
     }
 
     public function dumpTree($items = null)
     {
-        if ( ! $items) $items = Category::withTrashed()->defaultOrder()->get();
+        if (!$items) $items = Category::withTrashed()->defaultOrder()->get();
 
         foreach ($items as $item) {
-            echo PHP_EOL.($item->trashed() ? '-' : '+').' '.$item->name." ".$item->getKey().' '.$item->getLft()." ".$item->getRgt().' '.$item->getParentId();
+            echo PHP_EOL . ($item->trashed() ? '-' : '+') . ' ' . $item->name . " " . $item->getKey() . ' ' . $item->getLft() . " " . $item->getRgt() . ' ' . $item->getParentId();
         }
     }
 
@@ -98,8 +123,8 @@ class NodeTest extends PHPUnit\Framework\TestCase
         $nodeInDb = $this->findCategory($node->name);
 
         $this->assertEquals(
-            [ $nodeInDb->getLft(), $nodeInDb->getRgt() ],
-            [ $lft, $rgt ],
+            [$nodeInDb->getLft(), $nodeInDb->getRgt()],
+            [$lft, $rgt],
             'Node is not synced with database after save.'
         );
     }
@@ -118,34 +143,34 @@ class NodeTest extends PHPUnit\Framework\TestCase
         return $q->whereName($name)->first();
     }
 
+    public function nodeValues($node)
+    {
+        return array($node->_lft, $node->_rgt, $node->parent_id);
+    }
+
     public function testTreeNotBroken()
     {
         $this->assertTreeNotBroken();
         $this->assertFalse(Category::isBroken());
     }
 
-    public function nodeValues($node)
-    {
-        return array($node->_lft, $node->_rgt, $node->parent_id);
-    }
-
     public function testGetsNodeData()
     {
         $data = Category::getNodeData(3);
 
-        $this->assertEquals([ '_lft' => 3, '_rgt' => 4 ], $data);
+        $this->assertEquals(['_lft' => 3, '_rgt' => 4], $data);
     }
 
     public function testGetsPlainNodeData()
     {
         $data = Category::getPlainNodeData(3);
 
-        $this->assertEquals([ 3, 4 ], $data);
+        $this->assertEquals([3, 4], $data);
     }
 
     public function testReceivesValidValuesWhenAppendedTo()
     {
-        $node = new Category([ 'name' => 'test' ]);
+        $node = Category::create(['name' => 'test']);
         $root = Category::root();
 
         $accepted = array($root->_rgt, $root->_rgt + 1, $root->id);
@@ -161,8 +186,10 @@ class NodeTest extends PHPUnit\Framework\TestCase
 
     public function testReceivesValidValuesWhenPrependedTo()
     {
+        /** @var Category $root */
         $root = Category::root();
-        $node = new Category([ 'name' => 'test' ]);
+        /** @var Category $node */
+        $node = Category::create(['name' => 'test']);
         $root->prependNode($node);
 
         $this->assertTrue($node->hasMoved());
@@ -176,7 +203,7 @@ class NodeTest extends PHPUnit\Framework\TestCase
     public function testReceivesValidValuesWhenInsertedAfter()
     {
         $target = $this->findCategory('apple');
-        $node = new Category([ 'name' => 'test' ]);
+        $node = new Category(['name' => 'test']);
         $node->afterNode($target)->save();
 
         $this->assertTrue($node->hasMoved());
@@ -189,7 +216,7 @@ class NodeTest extends PHPUnit\Framework\TestCase
     public function testReceivesValidValuesWhenInsertedBefore()
     {
         $target = $this->findCategory('apple');
-        $node = new Category([ 'name' => 'test' ]);
+        $node = new Category(['name' => 'test']);
         $node->beforeNode($target)->save();
 
         $this->assertTrue($node->hasMoved());
@@ -221,32 +248,29 @@ class NodeTest extends PHPUnit\Framework\TestCase
         $this->assertNodeReceivesValidValues($node);
     }
 
-    /**
-     * @expectedException Exception
-     */
     public function testFailsToInsertIntoChild()
     {
+        $this->expectException(\Exception::class);
+
         $node = $this->findCategory('notebooks');
         $target = $node->children()->first();
 
         $node->afterNode($target)->save();
     }
 
-    /**
-     * @expectedException Exception
-     */
     public function testFailsToAppendIntoItself()
     {
+        $this->expectException(\Exception::class);
+
         $node = $this->findCategory('notebooks');
 
         $node->appendToNode($node)->save();
     }
 
-    /**
-     * @expectedException Exception
-     */
     public function testFailsToPrependIntoItself()
     {
+        $this->expectException(\Exception::class);
+
         $node = $this->findCategory('notebooks');
 
         $node->prependTo($node)->save();
@@ -295,7 +319,7 @@ class NodeTest extends PHPUnit\Framework\TestCase
         $this->assertEquals($expected, $descendants);
 
         $descendants = all(Category::descendantsAndSelf(7)->pluck('name'));
-        $expected = [ 'samsung', 'galaxy' ];
+        $expected = ['samsung', 'galaxy'];
 
         $this->assertEquals($expected, $descendants);
     }
@@ -338,11 +362,10 @@ class NodeTest extends PHPUnit\Framework\TestCase
         $this->assertTrue($node->isRoot());
     }
 
-    /**
-     * @expectedException Exception
-     */
     public function testFailsToSaveNodeUntilNotInserted()
     {
+        $this->expectException(\Exception::class);
+
         $node = new Category;
         $node->save();
     }
@@ -405,13 +428,12 @@ class NodeTest extends PHPUnit\Framework\TestCase
         $this->assertNull($this->findCategory('sony'));
     }
 
-    /**
-     * @expectedException Exception
-     */
     public function testFailsToSaveNodeUntilParentIsSaved()
     {
-        $node = new Category(array('title' => 'Node'));
-        $parent = new Category(array('title' => 'Parent'));
+        $this->expectException(\Exception::class);
+
+        $node = new Category(array('name' => 'Node'));
+        $parent = new Category(array('name' => 'Parent'));
 
         $node->appendTo($parent)->save();
     }
@@ -464,7 +486,7 @@ class NodeTest extends PHPUnit\Framework\TestCase
     public function testToTreeBuildsWithCustomOrder()
     {
         $tree = Category::whereBetween('_lft', array(8, 17))
-            ->orderBy('title')
+            ->orderBy('name')
             ->get()
             ->toTree();
 
@@ -481,8 +503,8 @@ class NodeTest extends PHPUnit\Framework\TestCase
         $node = $this->findCategory('mobile');
         $nodes = Category::whereBetween('_lft', array(8, 17))->get();
 
-        $tree1 = \Kalnoy\Nestedset\Collection::make($nodes)->toTree(5);
-        $tree2 = \Kalnoy\Nestedset\Collection::make($nodes)->toTree($node);
+        $tree1 = Collection::make($nodes)->toTree(5);
+        $tree2 = Collection::make($nodes)->toTree($node);
 
         $this->assertEquals(4, $tree1->count());
         $this->assertEquals(4, $tree2->count());
@@ -526,20 +548,21 @@ class NodeTest extends PHPUnit\Framework\TestCase
     {
         $parent = $this->findCategory('mobile');
 
-        $child = new Category([ 'name' => 'test' ]);
+        /** @var Category $child */
+        $child = Category::create(['name' => 'test']);
 
         $parent->appendNode($child);
 
-        $child->appendNode(new Category([ 'name' => 'sub' ]));
+        $child->appendNode(Category::create(['name' => 'sub']));
 
-        $parent->appendNode(new Category([ 'name' => 'test2' ]));
+        $parent->appendNode(Category::create(['name' => 'test2']));
 
         $this->assertTreeNotBroken();
     }
 
     public function testDefaultCategoryIsSavedAsRoot()
     {
-        $node = new Category([ 'name' => 'test' ]);
+        $node = new Category(['name' => 'test']);
         $node->save();
 
         $this->assertEquals(23, $node->_lft);
@@ -579,15 +602,15 @@ class NodeTest extends PHPUnit\Framework\TestCase
     {
         $errors = Category::countErrors();
 
-        $this->assertEquals([ 'oddness' => 0,
-                              'duplicates' => 0,
-                              'wrong_parent' => 0,
-                              'missing_parent' => 0 ], $errors);
+        $this->assertEquals(['oddness' => 0,
+            'duplicates' => 0,
+            'wrong_parent' => 0,
+            'missing_parent' => 0], $errors);
 
-        Category::where('id', '=', 5)->update([ '_lft' => 14 ]);
-        Category::where('id', '=', 8)->update([ 'parent_id' => 2 ]);
-        Category::where('id', '=', 11)->update([ '_lft' => 20 ]);
-        Category::where('id', '=', 4)->update([ 'parent_id' => 24 ]);
+        Category::where('id', '=', 5)->update(['_lft' => 14]);
+        Category::where('id', '=', 8)->update(['parent_id' => 2]);
+        Category::where('id', '=', 11)->update(['_lft' => 20]);
+        Category::where('id', '=', 4)->update(['parent_id' => 24]);
 
         $errors = Category::countErrors();
 
@@ -598,7 +621,7 @@ class NodeTest extends PHPUnit\Framework\TestCase
 
     public function testCreatesNode()
     {
-        $node = Category::create([ 'name' => 'test' ]);
+        $node = Category::create(['name' => 'test']);
 
         $this->assertEquals(23, $node->getLft());
     }
@@ -607,7 +630,7 @@ class NodeTest extends PHPUnit\Framework\TestCase
     {
         $node = $this->findCategory('apple');
 
-        $child = $node->children()->create([ 'name' => 'test' ]);
+        $child = $node->children()->create(['name' => 'test']);
 
         $this->assertTreeNotBroken();
     }
@@ -615,14 +638,14 @@ class NodeTest extends PHPUnit\Framework\TestCase
     public function testCreatesTree()
     {
         $node = Category::create(
-        [
-            'name' => 'test',
-            'children' =>
             [
-                [ 'name' => 'test2' ],
-                [ 'name' => 'test3' ],
-            ],
-        ]);
+                'name' => 'test',
+                'children' =>
+                    [
+                        ['name' => 'test2'],
+                        ['name' => 'test3'],
+                    ],
+            ]);
 
         $this->assertTreeNotBroken();
 
@@ -641,11 +664,10 @@ class NodeTest extends PHPUnit\Framework\TestCase
         $this->assertTrue($node->getDescendants()->isEmpty());
     }
 
-    /**
-     * @expectedException \Illuminate\Database\Eloquent\ModelNotFoundException
-     */
     public function testWhereDescendantsOf()
     {
+        $this->expectException(\Hyperf\Database\Model\ModelNotFoundException::class);
+
         Category::whereDescendantOf(124)->get();
     }
 
@@ -654,7 +676,7 @@ class NodeTest extends PHPUnit\Framework\TestCase
         $category = $this->findCategory('apple');
         $ancestors = all(Category::whereAncestorOf($category)->pluck('id'));
 
-        $this->assertEquals([ 1, 2 ], $ancestors);
+        $this->assertEquals([1, 2], $ancestors);
     }
 
     public function testDescendantsByNode()
@@ -662,15 +684,14 @@ class NodeTest extends PHPUnit\Framework\TestCase
         $category = $this->findCategory('notebooks');
         $res = all(Category::whereDescendantOf($category)->pluck('id'));
 
-        $this->assertEquals([ 3, 4 ], $res);
+        $this->assertEquals([3, 4], $res);
     }
 
     public function testMultipleDeletionsDoNotBrakeTree()
     {
         $category = $this->findCategory('mobile');
 
-        foreach ($category->children()->take(2)->get() as $child)
-        {
+        foreach ($category->children()->take(2)->get() as $child) {
             $child->forceDelete();
         }
 
@@ -679,10 +700,10 @@ class NodeTest extends PHPUnit\Framework\TestCase
 
     public function testTreeIsFixed()
     {
-        Category::where('id', '=', 5)->update([ '_lft' => 14 ]);
-        Category::where('id', '=', 8)->update([ 'parent_id' => 2 ]);
-        Category::where('id', '=', 11)->update([ '_lft' => 20 ]);
-        Category::where('id', '=', 2)->update([ 'parent_id' => 24 ]);
+        Category::where('id', '=', 5)->update(['_lft' => 14]);
+        Category::where('id', '=', 8)->update(['parent_id' => 2]);
+        Category::where('id', '=', 11)->update(['_lft' => 20]);
+        Category::where('id', '=', 2)->update(['parent_id' => 24]);
 
         $fixed = Category::fixTree();
 
@@ -700,7 +721,7 @@ class NodeTest extends PHPUnit\Framework\TestCase
 
     public function testSubtreeIsFixed()
     {
-        Category::where('id', '=', 8)->update([ '_lft' => 11 ]);
+        Category::where('id', '=', 8)->update(['_lft' => 11]);
 
         $fixed = Category::fixSubtree(Category::find(5));
         $this->assertEquals($fixed, 1);
@@ -761,7 +782,7 @@ class NodeTest extends PHPUnit\Framework\TestCase
 
     public function testDescendantsEagerlyLoaded()
     {
-        $nodes = Category::whereIn('id', [ 2, 5 ])->get();
+        $nodes = Category::whereIn('id', [2, 5])->get();
 
         $nodes->load('descendants');
 
@@ -771,7 +792,7 @@ class NodeTest extends PHPUnit\Framework\TestCase
 
     public function testDescendantsRelationQuery()
     {
-        $nodes = Category::has('descendants')->whereIn('id', [ 2, 3 ])->get();
+        $nodes = Category::has('descendants')->whereIn('id', [2, 3])->get();
 
         $this->assertEquals(1, $nodes->count());
         $this->assertEquals(2, $nodes->first()->getKey());
@@ -785,7 +806,7 @@ class NodeTest extends PHPUnit\Framework\TestCase
 
     public function testParentRelationQuery()
     {
-        $nodes = Category::has('parent')->whereIn('id', [ 1, 2 ]);
+        $nodes = Category::has('parent')->whereIn('id', [1, 2]);
 
         $this->assertEquals(1, $nodes->count());
         $this->assertEquals(2, $nodes->first()->getKey());
@@ -797,9 +818,9 @@ class NodeTest extends PHPUnit\Framework\TestCase
             [
                 'id' => 1,
                 'children' => [
-                    [ 'id' => 10 ],
-                    [ 'id' => 3, 'name' => 'apple v2', 'children' => [ [ 'name' => 'new node' ] ] ],
-                    [ 'id' => 2 ],
+                    ['id' => 10],
+                    ['id' => 3, 'name' => 'apple v2', 'children' => [['name' => 'new node']]],
+                    ['id' => 2],
 
                 ]
             ]
@@ -823,8 +844,8 @@ class NodeTest extends PHPUnit\Framework\TestCase
     public function testRebuildSubtree()
     {
         $fixed = Category::rebuildSubtree(Category::find(7), [
-            [ 'name' => 'new node' ],
-            [ 'id' => '8' ],
+            ['name' => 'new node'],
+            ['id' => '8'],
         ]);
 
         $this->assertTrue($fixed > 0);
@@ -838,7 +859,7 @@ class NodeTest extends PHPUnit\Framework\TestCase
 
     public function testRebuildTreeWithDeletion()
     {
-        Category::rebuildTree([ [ 'name' => 'all deleted' ] ], true);
+        Category::rebuildTree([['name' => 'all deleted']], true);
 
         $this->assertTreeNotBroken();
 
@@ -852,12 +873,11 @@ class NodeTest extends PHPUnit\Framework\TestCase
         $this->assertTrue($nodes->count() > 1);
     }
 
-    /**
-     * @expectedException \Illuminate\Database\Eloquent\ModelNotFoundException
-     */
     public function testRebuildFailsWithInvalidPK()
     {
-        Category::rebuildTree([ [ 'id' => 24 ] ]);
+        $this->expectException(\Hyperf\Database\Model\ModelNotFoundException::class);
+
+        Category::rebuildTree([['id' => 24]]);
     }
 
     public function testFlatTree()
@@ -902,10 +922,10 @@ class NodeTest extends PHPUnit\Framework\TestCase
 
     public function testEagerLoadAncestors()
     {
-        $queryLogCount = count(Capsule::connection()->getQueryLog());
+        $queryLogCount = count(Db::connection()->getQueryLog());
         $categories = Category::with('ancestors')->orderBy('name')->get();
 
-        $this->assertEquals($queryLogCount + 2, count(Capsule::connection()->getQueryLog()));
+        $this->assertEquals($queryLogCount + 2, count(Db::connection()->getQueryLog()));
 
         $expectedShape = [
             'apple (3)}' => 'store (1) > notebooks (2)',
@@ -925,7 +945,9 @@ class NodeTest extends PHPUnit\Framework\TestCase
 
         foreach ($categories as $category) {
             $output["{$category->name} ({$category->id})}"] = $category->ancestors->count()
-                ? implode(' > ', $category->ancestors->map(function ($cat) { return "{$cat->name} ({$cat->id})"; })->toArray())
+                ? implode(' > ', $category->ancestors->map(function ($cat) {
+                    return "{$cat->name} ({$cat->id})";
+                })->toArray())
                 : '';
         }
 
@@ -934,10 +956,10 @@ class NodeTest extends PHPUnit\Framework\TestCase
 
     public function testLazyLoadAncestors()
     {
-        $queryLogCount = count(Capsule::connection()->getQueryLog());
+        $queryLogCount = count(Db::connection()->getQueryLog());
         $categories = Category::orderBy('name')->get();
 
-        $this->assertEquals($queryLogCount + 1, count(Capsule::connection()->getQueryLog()));
+        $this->assertEquals($queryLogCount + 1, count(Db::connection()->getQueryLog()));
 
         $expectedShape = [
             'apple (3)}' => 'store (1) > notebooks (2)',
@@ -957,12 +979,14 @@ class NodeTest extends PHPUnit\Framework\TestCase
 
         foreach ($categories as $category) {
             $output["{$category->name} ({$category->id})}"] = $category->ancestors->count()
-                ? implode(' > ', $category->ancestors->map(function ($cat) { return "{$cat->name} ({$cat->id})"; })->toArray())
+                ? implode(' > ', $category->ancestors->map(function ($cat) {
+                    return "{$cat->name} ({$cat->id})";
+                })->toArray())
                 : '';
         }
 
         // assert that there is number of original query + 1 + number of rows to fulfill the relation
-        $this->assertEquals($queryLogCount + 12, count(Capsule::connection()->getQueryLog()));
+        $this->assertEquals($queryLogCount + 12, count(Db::connection()->getQueryLog()));
 
         $this->assertEquals($expectedShape, $output);
     }
@@ -971,13 +995,13 @@ class NodeTest extends PHPUnit\Framework\TestCase
     {
         $categories = all(Category::has('ancestors', '>', 2)->pluck('name'));
 
-        $this->assertEquals([ 'galaxy' ], $categories);
+        $this->assertEquals(['galaxy'], $categories);
 
         $categories = all(Category::whereHas('ancestors', function ($query) {
             $query->where('id', 5);
         })->pluck('name'));
 
-        $this->assertEquals([ 'nokia', 'samsung', 'galaxy', 'sony', 'lenovo' ], $categories);
+        $this->assertEquals(['nokia', 'samsung', 'galaxy', 'sony', 'lenovo'], $categories);
     }
 
     public function testReplication()
@@ -998,7 +1022,6 @@ class NodeTest extends PHPUnit\Framework\TestCase
 
         $this->assertEquals(1, $category->getParentId());
     }
-
 }
 
 function all($items)

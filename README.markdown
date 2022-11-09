@@ -1,8 +1,6 @@
-[![Build Status](https://travis-ci.org/lazychaser/laravel-nestedset.svg?branch=master)](https://travis-ci.org/lazychaser/laravel-nestedset)
-[![Total Downloads](https://poser.pugx.org/kalnoy/nestedset/downloads.svg)](https://packagist.org/packages/kalnoy/nestedset)
-[![Latest Stable Version](https://poser.pugx.org/kalnoy/nestedset/v/stable.svg)](https://packagist.org/packages/kalnoy/nestedset)
-[![Latest Unstable Version](https://poser.pugx.org/kalnoy/nestedset/v/unstable.svg)](https://packagist.org/packages/kalnoy/nestedset)
-[![License](https://poser.pugx.org/kalnoy/nestedset/license.svg)](https://packagist.org/packages/kalnoy/nestedset)
+# [lazychaser/laravel-nestedset](https://github.com/lazychaser/laravel-nestedset) 适配 Hyperf
+
+---
 
 This is a Laravel 4-8 package for working with trees in relational databases.
 
@@ -648,7 +646,7 @@ For prior Laravel versions:
 
 ```php
 ...
-use Kalnoy\Nestedset\NestedSet;
+use Ece2\HyperfExtNestedset\NestedSet;
 
 Schema::create('table', function (Blueprint $table) {
     ...
@@ -660,7 +658,7 @@ To drop columns:
 
 ```php
 ...
-use Kalnoy\Nestedset\NestedSet;
+use Ece2\HyperfExtNestedset\NestedSet;
 
 Schema::table('table', function (Blueprint $table) {
     NestedSet::dropColumns($table);
@@ -669,10 +667,10 @@ Schema::table('table', function (Blueprint $table) {
 
 #### The model
 
-Your model should use `Kalnoy\Nestedset\NodeTrait` trait to enable nested sets:
+Your model should use `Ece2\HyperfExtNestedset\NodeTrait` trait to enable nested sets:
 
 ```php
-use Kalnoy\Nestedset\NodeTrait;
+use Ece2\HyperfExtNestedset\NodeTrait;
 
 class Foo extends Model {
     use NodeTrait;

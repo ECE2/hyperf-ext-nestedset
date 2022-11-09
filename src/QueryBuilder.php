@@ -1,16 +1,16 @@
 <?php
 
-namespace Kalnoy\Nestedset;
+namespace Ece2\HyperfExtNestedset;
 
 use Carbon\Carbon;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
-use Illuminate\Database\Query\Builder as Query;
-use Illuminate\Database\Query\Builder as BaseQueryBuilder;
-use Illuminate\Support\Arr;
+use Hyperf\Database\Model\Builder;
+use Hyperf\Database\Model\Model;
+use Hyperf\Database\Model\ModelNotFoundException;
+use Hyperf\Database\Query\Builder as Query;
+use Hyperf\Database\Query\Builder as BaseQueryBuilder;
+use Hyperf\Utils\Arr;
 use LogicException;
-use Illuminate\Database\Query\Expression;
+use Hyperf\Database\Query\Expression;
 
 class QueryBuilder extends Builder
 {
@@ -152,7 +152,7 @@ class QueryBuilder extends Builder
      * @param mixed $id
      * @param array $columns
      *
-     * @return \Kalnoy\Nestedset\Collection
+     * @return \Ece2\HyperfExtNestedset\Collection
      */
     public function ancestorsOf($id, array $columns = array( '*' ))
     {
@@ -163,7 +163,7 @@ class QueryBuilder extends Builder
      * @param $id
      * @param array $columns
      *
-     * @return \Kalnoy\Nestedset\Collection
+     * @return \Ece2\HyperfExtNestedset\Collection
      */
     public function ancestorsAndSelf($id, array $columns = [ '*' ])
     {
