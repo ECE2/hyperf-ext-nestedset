@@ -661,9 +661,9 @@ trait NodeTrait
      *
      * @since 2.0
      */
-    public function newModelQuery()
+    public function newModelBuilder($query): QueryBuilder
     {
-        return (new QueryBuilder($this->newBaseQueryBuilder()))->setModel($this);
+        return new QueryBuilder($query);
     }
 
     /**
