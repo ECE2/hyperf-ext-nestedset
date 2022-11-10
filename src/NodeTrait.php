@@ -6,12 +6,69 @@ namespace Ece2\HyperfExtNestedset;
 
 use Exception;
 use Hyperf\Database\Model\Collection as ModelCollection;
+use Hyperf\Database\Model\Events\Deleted;
+use Hyperf\Database\Model\Events\Deleting;
+use Hyperf\Database\Model\Events\Restored;
+use Hyperf\Database\Model\Events\Restoring;
+use Hyperf\Database\Model\Events\Saving;
 use Hyperf\Database\Model\Model;
 use Hyperf\Database\Model\Relations\BelongsTo;
 use Hyperf\Database\Model\Relations\HasMany;
+use Hyperf\Database\Query\Builder;
 use Hyperf\Utils\Arr;
 use LogicException;
 
+/**
+ * @method array getNodeData($id, $required = false)
+ * @method array getPlainNodeData($id, $required = false)
+ * @method QueryBuilder whereIsRoot()
+ * @method QueryBuilder whereAncestorOf($id, $andSelf = false, $boolean = 'and')
+ * @method QueryBuilder orWhereAncestorOf($id, $andSelf = false)
+ * @method QueryBuilder whereAncestorOrSelf($id)
+ * @method Collection ancestorsOf($id, array $columns = array('*'))
+ * @method Collection ancestorsAndSelf($id, array $columns = ['*'])
+ * @method QueryBuilder whereNodeBetween($values, $boolean = 'and', $not = false)
+ * @method QueryBuilder orWhereNodeBetween($values)
+ * @method QueryBuilder whereDescendantOf($id, $boolean = 'and', $not = false, $andSelf = false)
+ * @method QueryBuilder whereNotDescendantOf($id)
+ * @method QueryBuilder orWhereDescendantOf($id)
+ * @method QueryBuilder orWhereNotDescendantOf($id)
+ * @method QueryBuilder whereDescendantOrSelf($id, $boolean = 'and', $not = false)
+ * @method ModelCollection descendantsOf($id, array $columns = ['*'], $andSelf = false)
+ * @method ModelCollection descendantsAndSelf($id, array $columns = ['*'])
+ * @method QueryBuilder whereIsAfter($id, $boolean = 'and')
+ * @method QueryBuilder whereIsBefore($id, $boolean = 'and')
+ * @method QueryBuilder whereIsLeaf()
+ * @method ModelCollection leaves(array $columns = ['*'])
+ * @method QueryBuilder withDepth($as = 'depth')
+ * @method QueryBuilder withoutRoot()
+ * @method QueryBuilder hasParent()
+ * @method QueryBuilder hasChildren()
+ * @method QueryBuilder defaultOrder($dir = 'asc')
+ * @method $this reversed()
+ * @method int makeGap($cut, $height)
+ * @method array countErrors()
+ * @method int getTotalErrors()
+ * @method bool isBroken()
+ * @method int fixTree($root = null)
+ * @method int fixSubtree($root)
+ * @method int rebuildTree(array $data, $delete = false, $root = null)
+ * @method int rebuildSubtree($root, array $data, $delete = false)
+ * @method self root(array $columns = ['*'])
+ * @method QueryBuilder whereIsBeforeOrAfter($id, $operator, $boolean)
+ * @method array wrappedColumns()
+ * @method string wrappedTable()
+ * @method string wrappedKey()
+ * @method array patch(array $params)
+ * @method string columnPatch($col, array $params)
+ * @method Builder getOdnessQuery()
+ * @method Builder getDuplicatesQuery()
+ * @method Builder getWrongParentQuery()
+ * @method QueryBuilder getMissingParentQuery()
+ * @method int fixNodes(array &$dictionary, $parent = null)
+ * @method void buildRebuildDictionary(array &$dictionary, array $data, array &$existing, $parentId = null)
+ * @method int reorderNodes(array &$dictionary, array &$updated, $parentId = null, $cut = 1)
+ */
 trait NodeTrait
 {
     /**
@@ -40,33 +97,29 @@ trait NodeTrait
      */
     public static $actionsPerformed = 0;
 
-    /**
-     * Sign on model events.
-     */
-    public static function bootNodeTrait()
+    public function saving(Saving $event)
     {
-        method_exists(static::class, 'saving') && static::saving(function ($model) {
-            return $model->callPendingAction();
-        });
+        return $this->callPendingAction();
+    }
 
-        method_exists(static::class, 'deleting') && static::deleting(function ($model) {
-            // We will need fresh data to delete node safely
-            $model->refreshNode();
-        });
+    public function deleting(Deleting $event)
+    {
+        $this->refreshNode();
+    }
 
-        method_exists(static::class, 'deleted') && static::deleted(function ($model) {
-            $model->deleteDescendants();
-        });
+    public function deleted(Deleted $event)
+    {
+        $this->deleteDescendants();
+    }
 
-        if (static::usesSoftDelete()) {
-            method_exists(static::class, 'restoring') && static::restoring(function ($model) {
-                static::$deletedAt = $model->{$model->getDeletedAtColumn()};
-            });
+    public function restoring(Restoring $event)
+    {
+        static::$deletedAt = $this->{$this->getDeletedAtColumn()};
+    }
 
-            method_exists(static::class, 'restored') && static::restored(function ($model) {
-                $model->restoreDescendants(static::$deletedAt);
-            });
-        }
+    public function restored(Restored $event)
+    {
+        $this->restoreDescendants(static::$deletedAt);
     }
 
     /**
@@ -90,18 +143,18 @@ trait NodeTrait
     {
         $this->moved = false;
 
-        if ( ! $this->pending && ! $this->exists) {
+        if (!$this->pending && !$this->exists) {
             $this->makeRoot();
         }
 
-        if ( ! $this->pending) return;
+        if (!$this->pending) return;
 
-        $method = 'action'.ucfirst(array_shift($this->pending));
+        $method = 'action' . ucfirst(array_shift($this->pending));
         $parameters = $this->pending;
 
         $this->pending = null;
 
-        $this->moved = call_user_func_array([ $this, $method ], $parameters);
+        $this->moved = call_user_func_array([$this, $method], $parameters);
     }
 
     /**
@@ -134,7 +187,7 @@ trait NodeTrait
     protected function actionRoot()
     {
         // Simplest case that do not affect other nodes.
-        if ( ! $this->exists) {
+        if (!$this->exists) {
             $cut = $this->getLowerBound() + 1;
 
             $this->setLft($cut);
@@ -153,7 +206,7 @@ trait NodeTrait
      */
     protected function getLowerBound()
     {
-        return (int)$this->newNestedSetQuery()->max($this->getRgtName());
+        return (int) $this->newNestedSetQuery()->max($this->getRgtName());
     }
 
     /**
@@ -170,7 +223,7 @@ trait NodeTrait
 
         $cut = $prepend ? $parent->getLft() + 1 : $parent->getRgt();
 
-        if ( ! $this->insertAt($cut)) {
+        if (!$this->insertAt($cut)) {
             return false;
         }
 
@@ -214,7 +267,7 @@ trait NodeTrait
      */
     public function refreshNode()
     {
-        if ( ! $this->exists || static::$actionsPerformed === 0) return;
+        if (!$this->exists || static::$actionsPerformed === 0) return;
 
         $attributes = $this->newNestedSetQuery()->getNodeData($this->getKey());
 
@@ -280,11 +333,11 @@ trait NodeTrait
     /**
      * Get query for the node siblings and the node itself.
      *
-     * @param  array $columns
+     * @param array $columns
      *
-     * @return \Hyperf\Database\Model\Collection
+     * @return ModelCollection
      */
-    public function getSiblingsAndSelf(array $columns = [ '*' ])
+    public function getSiblingsAndSelf(array $columns = ['*'])
     {
         return $this->siblingsAndSelf()->get($columns);
     }
@@ -470,7 +523,7 @@ trait NodeTrait
             ->assertNotDescendant($node)
             ->assertSameScope($node);
 
-        if ( ! $this->isSiblingOf($node)) {
+        if (!$this->isSiblingOf($node)) {
             $this->setParent($node->getRelationValue('parent'));
         }
 
@@ -500,7 +553,7 @@ trait NodeTrait
      */
     public function insertBeforeNode(self $node)
     {
-        if ( ! $this->beforeNode($node)->save()) return false;
+        if (!$this->beforeNode($node)->save()) return false;
 
         // We'll update the target node since it will be moved
         $node->refreshNode();
@@ -536,7 +589,7 @@ trait NodeTrait
             ->skip($amount - 1)
             ->first();
 
-        if ( ! $sibling) return false;
+        if (!$sibling) return false;
 
         return $this->insertBeforeNode($sibling);
     }
@@ -555,7 +608,7 @@ trait NodeTrait
             ->skip($amount - 1)
             ->first();
 
-        if ( ! $sibling) return false;
+        if (!$sibling) return false;
 
         return $this->insertAfterNode($sibling);
     }
@@ -563,7 +616,7 @@ trait NodeTrait
     /**
      * Insert node at specific position.
      *
-     * @param  int $position
+     * @param int $position
      *
      * @return bool
      */
@@ -581,11 +634,11 @@ trait NodeTrait
     /**
      * Move a node to the new position.
      *
-     * @since 2.0
-     *
      * @param int $position
      *
      * @return int
+     * @since 2.0
+     *
      */
     protected function moveNode($position)
     {
@@ -600,11 +653,11 @@ trait NodeTrait
     /**
      * Insert new node at specified position.
      *
-     * @since 2.0
-     *
      * @param int $position
      *
      * @return bool
+     * @since 2.0
+     *
      */
     protected function insertNode($position)
     {
@@ -669,9 +722,9 @@ trait NodeTrait
     /**
      * Get a new base query that includes deleted nodes.
      *
+     * @return QueryBuilder
      * @since 1.1
      *
-     * @return QueryBuilder
      */
     public function newNestedSetQuery($table = null)
     {
@@ -700,17 +753,17 @@ trait NodeTrait
      */
     public function applyNestedSetScope($query, $table = null)
     {
-        if ( ! $scoped = $this->getScopeAttributes()) {
+        if (!$scoped = $this->getScopeAttributes()) {
             return $query;
         }
 
-        if ( ! $table) {
+        if (!$table) {
             $table = $this->getTable();
         }
 
         foreach ($scoped as $attribute) {
-            $query->where($table.'.'.$attribute, '=',
-                          $this->getAttributeValue($attribute));
+            $query->where($table . '.' . $attribute, '=',
+                $this->getAttributeValue($attribute));
         }
 
         return $query;
@@ -768,7 +821,7 @@ trait NodeTrait
         // Now create children
         $relation = new ModelCollection;
 
-        foreach ((array)$children as $child) {
+        foreach ((array) $children as $child) {
             $relation->add($child = static::create($child, $instance));
 
             $child->setRelation('parent', $instance);
@@ -786,7 +839,7 @@ trait NodeTrait
      */
     public function getNodeHeight()
     {
-        if ( ! $this->exists) return 2;
+        if (!$this->exists) return 2;
 
         return $this->getRgt() - $this->getLft() + 1;
     }
@@ -908,7 +961,7 @@ trait NodeTrait
      *
      * @return self
      */
-    public function getNextNode(array $columns = [ '*' ])
+    public function getNextNode(array $columns = ['*'])
     {
         return $this->nextNodes()->defaultOrder()->first($columns);
     }
@@ -922,7 +975,7 @@ trait NodeTrait
      *
      * @return self
      */
-    public function getPrevNode(array $columns = [ '*' ])
+    public function getPrevNode(array $columns = ['*'])
     {
         return $this->prevNodes()->defaultOrder('desc')->first($columns);
     }
@@ -932,7 +985,7 @@ trait NodeTrait
      *
      * @return Collection
      */
-    public function getAncestors(array $columns = [ '*' ])
+    public function getAncestors(array $columns = ['*'])
     {
         return $this->ancestors()->get($columns);
     }
@@ -942,7 +995,7 @@ trait NodeTrait
      *
      * @return Collection|self[]
      */
-    public function getDescendants(array $columns = [ '*' ])
+    public function getDescendants(array $columns = ['*'])
     {
         return $this->descendants()->get($columns);
     }
@@ -952,7 +1005,7 @@ trait NodeTrait
      *
      * @return Collection|self[]
      */
-    public function getSiblings(array $columns = [ '*' ])
+    public function getSiblings(array $columns = ['*'])
     {
         return $this->siblings()->get($columns);
     }
@@ -962,7 +1015,7 @@ trait NodeTrait
      *
      * @return Collection|self[]
      */
-    public function getNextSiblings(array $columns = [ '*' ])
+    public function getNextSiblings(array $columns = ['*'])
     {
         return $this->nextSiblings()->get($columns);
     }
@@ -972,7 +1025,7 @@ trait NodeTrait
      *
      * @return Collection|self[]
      */
-    public function getPrevSiblings(array $columns = [ '*' ])
+    public function getPrevSiblings(array $columns = ['*'])
     {
         return $this->prevSiblings()->get($columns);
     }
@@ -982,7 +1035,7 @@ trait NodeTrait
      *
      * @return self
      */
-    public function getNextSibling(array $columns = [ '*' ])
+    public function getNextSibling(array $columns = ['*'])
     {
         return $this->nextSiblings()->defaultOrder()->first($columns);
     }
@@ -992,7 +1045,7 @@ trait NodeTrait
      *
      * @return self
      */
-    public function getPrevSibling(array $columns = [ '*' ])
+    public function getPrevSibling(array $columns = ['*'])
     {
         return $this->prevSiblings()->defaultOrder('desc')->first($columns);
     }
@@ -1101,7 +1154,7 @@ trait NodeTrait
      */
     protected function hardDeleting()
     {
-        return ! $this->usesSoftDelete() || $this->forceDeleting;
+        return !$this->usesSoftDelete() || $this->forceDeleting;
     }
 
     /**
@@ -1109,7 +1162,7 @@ trait NodeTrait
      */
     public function getBounds()
     {
-        return [ $this->getLft(), $this->getRgt() ];
+        return [$this->getLft(), $this->getRgt()];
     }
 
     /**
@@ -1180,7 +1233,7 @@ trait NodeTrait
      */
     protected function assertNodeExists(self $node)
     {
-        if ( ! $node->getLft() || ! $node->getRgt()) {
+        if (!$node->getLft() || !$node->getRgt()) {
             throw new LogicException('Node must exists.');
         }
 
@@ -1192,7 +1245,7 @@ trait NodeTrait
      */
     protected function assertSameScope(self $node)
     {
-        if ( ! $scoped = $this->getScopeAttributes()) {
+        if (!$scoped = $this->getScopeAttributes()) {
             return;
         }
 

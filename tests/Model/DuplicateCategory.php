@@ -8,7 +8,7 @@ class DuplicateCategory extends \Hyperf\Database\Model\Model
 {
     use NodeTrait;
 
-    protected string $table = 'categories';
+    protected ?string $table = 'categories';
 
     protected array $fillable = ['name'];
 

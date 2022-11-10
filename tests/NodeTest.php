@@ -5,24 +5,18 @@ namespace HyperfTest\HyperfExtNestedset;
 use Ece2\HyperfExtNestedset\Collection;
 use Ece2\HyperfExtNestedset\NestedSet;
 use Hyperf\Database\ConnectionInterface;
-use Hyperf\Database\ConnectionResolver;
 use Hyperf\Database\ConnectionResolverInterface;
-use Hyperf\Database\Connectors\ConnectionFactory;
-use Hyperf\Database\Connectors\MySqlConnector;
-use Hyperf\Database\Migrations\DatabaseMigrationRepository;
-use Hyperf\Database\Migrations\Migrator;
-use Hyperf\Database\Query\Builder;
-use Hyperf\Database\Query\Grammars\Grammar;
-use Hyperf\Database\Query\Grammars\MySqlGrammar;
-use Hyperf\Database\Query\Processors\Processor;
+use Hyperf\Database\Model\Events\Deleted;
+use Hyperf\Database\Model\Events\Deleting;
+use Hyperf\Database\Model\Events\Restored;
+use Hyperf\Database\Model\Events\Restoring;
+use Hyperf\Database\Model\Events\Saving;
+use Hyperf\Database\Model\Register;
 use Hyperf\Database\Schema\Schema;
 use Hyperf\DbConnection\Db;
-use Hyperf\Utils\ApplicationContext;
-use Hyperf\Utils\Filesystem\Filesystem;
 use HyperfTest\HyperfExtNestedset\Model\Category;
 use HyperfTest\HyperfExtNestedset\Stub\ContainerStub;
 use PHPUnit\Framework\TestCase;
-use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
 class NodeTest extends TestCase
@@ -31,7 +25,7 @@ class NodeTest extends TestCase
 
     public static function setUpBeforeClass(): void
     {
-        $container = ContainerStub::getContainer();
+        ContainerStub::getContainer();
 
         Schema::dropIfExists('categories');
 
@@ -45,7 +39,7 @@ class NodeTest extends TestCase
 
     protected function setUp(): void
     {
-        $container = ContainerStub::getContainer();
+        $container = $this->getContainer();
 
         $data = include __DIR__ . '/data/categories.php';
 
@@ -63,12 +57,16 @@ class NodeTest extends TestCase
     {
         $dispatcher = \Mockery::mock(EventDispatcherInterface::class);
         $dispatcher->shouldReceive('dispatch')->with(\Mockery::any())->andReturnUsing(function ($event) {
-//            $this->channel->push($event);
+            if (in_array(get_class($event), [Saving::class, Deleting::class, Deleted::class, Restoring::class, Restored::class])) {
+                $event->handle();
+            }
         });
         $container = ContainerStub::getContainer(function ($conn) use ($dispatcher) {
             $conn->setEventDispatcher($dispatcher);
         });
         $container->shouldReceive('get')->with(EventDispatcherInterface::class)->andReturn($dispatcher);
+
+        Register::setEventDispatcher($dispatcher);
 
         return $container;
     }
@@ -550,22 +548,24 @@ class NodeTest extends TestCase
 
         /** @var Category $child */
         $child = Category::create(['name' => 'test']);
-
         $parent->appendNode($child);
 
-        $child->appendNode(Category::create(['name' => 'sub']));
+        $childSub = Category::create(['name' => 'sub']);
+        $child->appendNode($childSub);
 
-        $parent->appendNode(Category::create(['name' => 'test2']));
+        $parentSub = Category::create(['name' => 'test2']);
+        $parent->appendNode($parentSub);
 
         $this->assertTreeNotBroken();
     }
 
     public function testDefaultCategoryIsSavedAsRoot()
     {
+        /** @var Category $node */
         $node = new Category(['name' => 'test']);
         $node->save();
 
-        $this->assertEquals(23, $node->_lft);
+        $this->assertEquals(23, $node->getLft());
         $this->assertTreeNotBroken();
 
         $this->assertTrue($node->isRoot());
@@ -918,77 +918,6 @@ class NodeTest extends TestCase
         $category = Category::whereIsRoot()->first();
 
         $this->assertFalse($category->isLeaf());
-    }
-
-    public function testEagerLoadAncestors()
-    {
-        $queryLogCount = count(Db::connection()->getQueryLog());
-        $categories = Category::with('ancestors')->orderBy('name')->get();
-
-        $this->assertEquals($queryLogCount + 2, count(Db::connection()->getQueryLog()));
-
-        $expectedShape = [
-            'apple (3)}' => 'store (1) > notebooks (2)',
-            'galaxy (8)}' => 'store (1) > mobile (5) > samsung (7)',
-            'lenovo (4)}' => 'store (1) > notebooks (2)',
-            'lenovo (10)}' => 'store (1) > mobile (5)',
-            'mobile (5)}' => 'store (1)',
-            'nokia (6)}' => 'store (1) > mobile (5)',
-            'notebooks (2)}' => 'store (1)',
-            'samsung (7)}' => 'store (1) > mobile (5)',
-            'sony (9)}' => 'store (1) > mobile (5)',
-            'store (1)}' => '',
-            'store_2 (11)}' => ''
-        ];
-
-        $output = [];
-
-        foreach ($categories as $category) {
-            $output["{$category->name} ({$category->id})}"] = $category->ancestors->count()
-                ? implode(' > ', $category->ancestors->map(function ($cat) {
-                    return "{$cat->name} ({$cat->id})";
-                })->toArray())
-                : '';
-        }
-
-        $this->assertEquals($expectedShape, $output);
-    }
-
-    public function testLazyLoadAncestors()
-    {
-        $queryLogCount = count(Db::connection()->getQueryLog());
-        $categories = Category::orderBy('name')->get();
-
-        $this->assertEquals($queryLogCount + 1, count(Db::connection()->getQueryLog()));
-
-        $expectedShape = [
-            'apple (3)}' => 'store (1) > notebooks (2)',
-            'galaxy (8)}' => 'store (1) > mobile (5) > samsung (7)',
-            'lenovo (4)}' => 'store (1) > notebooks (2)',
-            'lenovo (10)}' => 'store (1) > mobile (5)',
-            'mobile (5)}' => 'store (1)',
-            'nokia (6)}' => 'store (1) > mobile (5)',
-            'notebooks (2)}' => 'store (1)',
-            'samsung (7)}' => 'store (1) > mobile (5)',
-            'sony (9)}' => 'store (1) > mobile (5)',
-            'store (1)}' => '',
-            'store_2 (11)}' => ''
-        ];
-
-        $output = [];
-
-        foreach ($categories as $category) {
-            $output["{$category->name} ({$category->id})}"] = $category->ancestors->count()
-                ? implode(' > ', $category->ancestors->map(function ($cat) {
-                    return "{$cat->name} ({$cat->id})";
-                })->toArray())
-                : '';
-        }
-
-        // assert that there is number of original query + 1 + number of rows to fulfill the relation
-        $this->assertEquals($queryLogCount + 12, count(Db::connection()->getQueryLog()));
-
-        $this->assertEquals($expectedShape, $output);
     }
 
     public function testWhereHasCountQueryForAncestors()

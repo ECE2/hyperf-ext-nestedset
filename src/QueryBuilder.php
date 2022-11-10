@@ -2,16 +2,18 @@
 
 namespace Ece2\HyperfExtNestedset;
 
-use Carbon\Carbon;
 use Hyperf\Database\Model\Builder;
 use Hyperf\Database\Model\Model;
 use Hyperf\Database\Model\ModelNotFoundException;
-use Hyperf\Database\Query\Builder as Query;
 use Hyperf\Database\Query\Builder as BaseQueryBuilder;
+use Hyperf\Database\Query\Builder as Query;
+use Hyperf\Database\Query\Expression;
 use Hyperf\Utils\Arr;
 use LogicException;
-use Hyperf\Database\Query\Expression;
 
+/**
+ * @method \Hyperf\Database\Query\Builder|Collection get($columns = ['*'])
+ */
 class QueryBuilder extends Builder
 {
     /**
@@ -36,7 +38,7 @@ class QueryBuilder extends Builder
         $query->where($this->model->getKeyName(), '=', $id);
 
         $data = $query->first([ $this->model->getLftName(),
-                                $this->model->getRgtName() ]);
+            $this->model->getRgtName() ]);
 
         if ( ! $data && $required) {
             throw new ModelNotFoundException;
@@ -221,7 +223,7 @@ class QueryBuilder extends Builder
             $data = $id->getBounds();
         } else {
             $data = $this->model->newNestedSetQuery()
-                                ->getPlainNodeData($id, true);
+                ->getPlainNodeData($id, true);
         }
 
         // Don't include the node
@@ -542,7 +544,7 @@ class QueryBuilder extends Builder
     public function moveNode($key, $position)
     {
         list($lft, $rgt) = $this->model->newNestedSetQuery()
-                                       ->getPlainNodeData($key, true);
+            ->getPlainNodeData($key, true);
 
         if ($lft < $position && $position <= $rgt) {
             throw new LogicException('Cannot move node into itself.');
@@ -654,9 +656,9 @@ class QueryBuilder extends Builder
         if ($distance > 0) $distance = '+'.$distance;
 
         return new Expression("case ".
-                              "when {$col} between {$lft} and {$rgt} then {$col}{$distance} ". // Move the node
-                              "when {$col} between {$from} and {$to} then {$col}{$height} ". // Move other nodes
-                              "else {$col} end"
+            "when {$col} between {$lft} and {$rgt} then {$col}{$distance} ". // Move the node
+            "when {$col} between {$from} and {$to} then {$col}{$height} ". // Move other nodes
+            "else {$col} end"
         );
     }
 
@@ -706,7 +708,7 @@ class QueryBuilder extends Builder
                 list($lft, $rgt) = $this->wrappedColumns();
 
                 $inner->whereRaw("{$lft} >= {$rgt}")
-                      ->orWhereRaw("({$rgt} - {$lft}) % 2 = 0");
+                    ->orWhereRaw("({$rgt} - {$lft}) % 2 = 0");
             });
     }
 
@@ -733,9 +735,9 @@ class QueryBuilder extends Builder
                 list($lft, $rgt) = $this->wrappedColumns();
 
                 $inner->orWhereRaw("{$waFirst}.{$lft}={$waSecond}.{$lft}")
-                      ->orWhereRaw("{$waFirst}.{$rgt}={$waSecond}.{$rgt}")
-                      ->orWhereRaw("{$waFirst}.{$lft}={$waSecond}.{$rgt}")
-                      ->orWhereRaw("{$waFirst}.{$rgt}={$waSecond}.{$lft}");
+                    ->orWhereRaw("{$waFirst}.{$rgt}={$waSecond}.{$rgt}")
+                    ->orWhereRaw("{$waFirst}.{$lft}={$waSecond}.{$rgt}")
+                    ->orWhereRaw("{$waFirst}.{$rgt}={$waSecond}.{$lft}");
             });
 
         return $this->model->applyNestedSetScope($query, $secondAlias);
@@ -772,8 +774,8 @@ class QueryBuilder extends Builder
                 list($lft, $rgt) = $this->wrappedColumns();
 
                 $inner->whereRaw("{$waChild}.{$lft} not between {$waParent}.{$lft} and {$waParent}.{$rgt}")
-                      ->orWhereRaw("{$waChild}.{$lft} between {$waInterm}.{$lft} and {$waInterm}.{$rgt}")
-                      ->whereRaw("{$waInterm}.{$lft} between {$waParent}.{$lft} and {$waParent}.{$rgt}");
+                    ->orWhereRaw("{$waChild}.{$lft} between {$waInterm}.{$lft} and {$waInterm}.{$rgt}")
+                    ->whereRaw("{$waInterm}.{$lft} between {$waParent}.{$lft} and {$waParent}.{$rgt}");
             });
 
         $this->model->applyNestedSetScope($query, $parentAlias);
@@ -810,7 +812,7 @@ class QueryBuilder extends Builder
                 $this->model->applyNestedSetScope($existsCheck, $alias);
 
                 $inner->whereRaw("{$parentIdName} is not null")
-                      ->addWhereExistsQuery($existsCheck, 'and', true);
+                    ->addWhereExistsQuery($existsCheck, 'and', true);
             });
     }
 
@@ -1059,9 +1061,9 @@ class QueryBuilder extends Builder
             if ( ! isset($itemData['children'])) continue;
 
             $this->buildRebuildDictionary($dictionary,
-                                          $itemData['children'],
-                                          $existing,
-                                          $model->getKey());
+                $itemData['children'],
+                $existing,
+                $model->getKey());
         }
     }
 

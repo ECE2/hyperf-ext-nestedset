@@ -14,6 +14,7 @@ use Hyperf\DbConnection\Db;
 use Hyperf\Di\Container;
 use Hyperf\Utils\ApplicationContext;
 use Mockery;
+use Psr\EventDispatcher\EventDispatcherInterface;
 
 class ContainerStub
 {
