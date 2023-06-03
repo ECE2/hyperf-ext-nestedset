@@ -8,7 +8,7 @@ use Hyperf\Database\Model\ModelNotFoundException;
 use Hyperf\Database\Query\Builder as BaseQueryBuilder;
 use Hyperf\Database\Query\Builder as Query;
 use Hyperf\Database\Query\Expression;
-use Hyperf\Utils\Arr;
+use Hyperf\Collection\Arr;
 use LogicException;
 
 /**

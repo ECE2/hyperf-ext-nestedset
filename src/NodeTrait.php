@@ -15,7 +15,7 @@ use Hyperf\Database\Model\Model;
 use Hyperf\Database\Model\Relations\BelongsTo;
 use Hyperf\Database\Model\Relations\HasMany;
 use Hyperf\Database\Query\Builder;
-use Hyperf\Utils\Arr;
+use Hyperf\Collection\Arr;
 use LogicException;
 
 /**

@@ -36,7 +36,7 @@ abstract class BaseRelation extends Relation
      */
     public function __construct(QueryBuilder $builder, Model $model)
     {
-        if ( ! NestedSet::isNode($model)) {
+        if (!NestedSet::isNode($model)) {
             throw new InvalidArgumentException('Model must be node.');
         }
 
@@ -77,13 +77,14 @@ abstract class BaseRelation extends Relation
      * @return mixed
      */
     public function getRelationExistenceQuery(ModelBuilder $query, ModelBuilder $parent,
-                                                           $columns = [ '*' ]
-    ) {
+                                                           $columns = ['*']
+    )
+    {
         $query = $this->getParent()->replicate()->newScopedQuery()->select($columns);
 
         $table = $query->getModel()->getTable();
 
-        $query->from($table.' as '.$hash = $this->getRelationCountHash());
+        $query->from($table . ' as ' . $hash = $this->getRelationCountHash());
 
         $query->getModel()->setTable($hash);
 
@@ -101,8 +102,8 @@ abstract class BaseRelation extends Relation
     /**
      * Initialize the relation on a set of models.
      *
-     * @param  array $models
-     * @param  string $relation
+     * @param array $models
+     * @param string $relation
      *
      * @return array
      */
@@ -114,12 +115,12 @@ abstract class BaseRelation extends Relation
     /**
      * Get a relationship join table hash.
      *
-     * @param  bool $incrementJoinCount
+     * @param bool $incrementJoinCount
      * @return string
      */
     public function getRelationCountHash($incrementJoinCount = true)
     {
-        return 'nested_set_'.($incrementJoinCount ? static::$selfJoinCount++ : static::$selfJoinCount);
+        return 'nested_set_' . ($incrementJoinCount ? static::$selfJoinCount++ : static::$selfJoinCount);
     }
 
     /**
@@ -135,7 +136,7 @@ abstract class BaseRelation extends Relation
     /**
      * Set the constraints for an eager load of the relation.
      *
-     * @param  array $models
+     * @param array $models
      *
      * @return void
      */
@@ -160,9 +161,9 @@ abstract class BaseRelation extends Relation
     /**
      * Match the eagerly loaded results to their parents.
      *
-     * @param  array $models
-     * @param  ModelCollection $results
-     * @param  string $relation
+     * @param array $models
+     * @param ModelCollection $results
+     * @param string $relation
      *
      * @return array
      */
@@ -194,5 +195,17 @@ abstract class BaseRelation extends Relation
         }
 
         return $result;
+    }
+
+    /**
+     * Get the plain foreign key.
+     *
+     * @return mixed
+     */
+    public function getForeignKeyName()
+    {
+        // Return a stub value for relation
+        // resolvers which need this function.
+        return NestedSet::PARENT_ID;
     }
 }
